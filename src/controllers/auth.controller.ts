@@ -1,0 +1,108 @@
+import { Request, Response } from "express";
+import { authService } from "../services/auth.service";
+import { LoginSchema } from "../models/auth.model";
+import {EmailInUseError, InvalidCredentialsError, UserNotActiveError} from "../errors/errors";
+import {cleanupUploadedFiles} from "../utils/cleanup";
+import {CreateUserSchema, UserResponseSchema} from "../models/user.model";
+import {userService} from "../services/user.service";
+
+export const authController = {
+    async registerUser(req: Request, res: Response) {
+        const body: any = { ...req.body };
+        try {
+            if (typeof body.legal_guardian === 'string') {
+                body.legal_guardian = JSON.parse(body.legal_guardian);
+            }
+        } catch (e) {
+        }
+
+        const parsed = CreateUserSchema.safeParse(body);
+
+        if (!parsed.success) {
+            await cleanupUploadedFiles(undefined, req.files as Record<string, Express.Multer.File[]>);
+            return res.status(400).json({ errors: parsed.error.format() });
+        }
+
+        try {
+            const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+            const pictureFile = files?.['picture']?.[0];
+            const medicalFile = files?.['medicalCertificate']?.[0];
+            const attestationFile = files?.['attestation']?.[0];
+
+            const user = await userService.create(
+                parsed.data,
+                pictureFile,
+                medicalFile,
+                attestationFile
+            );
+
+            await authService.sendVerification(user.id, user.email)
+
+            const responseData = UserResponseSchema.parse(user);
+            return res.status(201).json({
+                message: 'RRegistration successful. Please check your email to verify your account',
+                user: UserResponseSchema.parse(user)
+            });
+
+        } catch (error) {
+            await cleanupUploadedFiles(undefined, req.files as Record<string, Express.Multer.File[]>);
+            if (error instanceof EmailInUseError) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error(error);
+            return res.status(500).json({ error: "Internal server error" });
+        }
+    },
+
+    async login(req: Request, res: Response) {
+        const validationResult = LoginSchema.safeParse(req.body);
+
+        if (!validationResult.success) {
+            return res.status(400).json({ errors: validationResult.error.format() });
+        }
+
+        try {
+            const { email, password } = validationResult.data;
+            const { token, user } = await authService.login(email, password);
+
+            return res.status(200).json({
+                message: "Login successful",
+                token: token,
+                user: { // Send back some non-sensitive user data
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                }
+            });
+
+        } catch (error) {
+            if (error instanceof InvalidCredentialsError || error instanceof UserNotActiveError) {
+                return res.status(error.statusCode).json({ error: error.message });
+            }
+            console.error(error);
+            return res.status(500).json({ error: "An internal server error occurred." });
+        }
+    },
+
+    async logout(req: Request, res: Response) {
+        return res.status(200).json({ message: "Logout successful" });
+    },
+
+    async verifyEmail(req: Request, res: Response) {
+      try {
+          const { token } = req.params;
+          await authService.verifyEmail(token);
+
+          return res.status(200).json({message: "Email verified"});
+      } catch (error: unknown) {
+          if (error instanceof InvalidCredentialsError ) {
+              return res.status(error.statusCode).json({ error: error.message });
+          }
+          console.error(error);
+          /*
+          * TODO: redirect to failer page
+          * */
+          return res.status(500).json({ error: "Email verification failed" });
+      }
+    }
+};

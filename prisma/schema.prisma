@@ -1,0 +1,125 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum userRole {
+  admin
+  parent
+  user
+}
+
+enum gender {
+  woman
+  man
+}
+
+enum RelationshipType {
+  Mother
+  Father
+  Guardian
+}
+
+enum DocumentType {
+  IDENTITY_PHOTO
+  BIRTH_CERTIFICATE
+  MEDICAL_CERTIFICATE
+  PARENTAL_AUTHORIZATION
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model Users {
+  id                Int       @id @default(autoincrement())
+  first_name        String
+  last_name         String
+  email             String    @unique
+  password          String
+  role              userRole  @default(user)
+  date_of_birth     DateTime
+  place_of_birth    String
+  gender            gender
+  address           String
+  phone_number      String    @unique
+  blood_type        String
+  picture_url       String?   @map("picture")
+  nationality       String    @default("Algerie")
+  is_active         Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+  email_verified_at DateTime?
+  tokens            Token[]
+
+  // relation
+  legal_guardian_of    PlayerRelationShips[] @relation("Player")
+  players_as_guardian  PlayerRelationShips[] @relation("LegalGuardian")
+  documents            Documents[]
+  medical_certificates MedicalCertificates[]
+}
+
+model Token {
+  id         Int       @id @default(autoincrement())
+  token      String    @unique
+  type       TokenType
+  expires_at DateTime
+  user_id    Int
+  user       Users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model PlayerRelationShips {
+  id                Int              @id @default(autoincrement())
+  legal_guardian_id Int
+  player_id         Int
+  relationship_type RelationshipType
+
+  player        Users @relation("Player", fields: [player_id], references: [id])
+  legalGuardian Users @relation("LegalGuardian", fields: [legal_guardian_id], references: [id])
+
+  @@unique([player_id])
+}
+
+model Documents {
+  id                   Int                  @id @default(autoincrement())
+  user_id              Int
+  title                String
+  file_path            String
+  document_type        DocumentType
+  uploaded_by          String
+  created_At           DateTime             @default(now())
+  user                 Users                @relation(fields: [user_id], references: [id])
+  medical_certificates MedicalCertificates? @relation("MedicalDocument")
+
+  @@index([user_id])
+}
+
+model MedicalCertificates {
+  id                   Int      @id @default(autoincrement())
+  user_id              Int
+  issue_date           DateTime
+  document_id          Int      @unique
+  is_cardiologist_cert Boolean  @default(false)
+
+  user            Users     @relation(fields: [user_id], references: [id])
+  MedicalDocument Documents @relation("MedicalDocument", fields: [document_id], references: [id])
+
+  @@index([document_id])
+}

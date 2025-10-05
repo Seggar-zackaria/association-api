@@ -9,3 +9,13 @@ yarn-error.log*
 .pnp.js
 
 .vscode/*
+/src/generated/prisma
+/prisma/migrations
+/public/uploads/attestation
+/public/uploads/medical
+/public/uploads/temp
+/public/uploads/pictures
+
+/.idea
+/.env
+/dist

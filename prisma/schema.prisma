@@ -14,15 +14,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum userRole {
+enum UserRole {
   admin
+  bureau_member
+  coach
+  player
   parent
-  user
+  intern
 }
 
-enum gender {
-  woman
-  man
+enum Gender {
+  Male
+  Female
 }
 
 enum RelationshipType {
@@ -36,6 +39,8 @@ enum DocumentType {
   BIRTH_CERTIFICATE
   MEDICAL_CERTIFICATE
   PARENTAL_AUTHORIZATION
+  SCANNED_LICENSE
+  OTHER
 }
 
 enum TokenType {
@@ -43,83 +48,339 @@ enum TokenType {
   PASSWORD_RESET
 }
 
-model Users {
-  id                Int       @id @default(autoincrement())
-  first_name        String
-  last_name         String
-  email             String    @unique
-  password          String
-  role              userRole  @default(user)
-  date_of_birth     DateTime
-  place_of_birth    String
-  gender            gender
-  address           String
-  phone_number      String    @unique
-  blood_type        String
-  picture_url       String?   @map("picture")
-  nationality       String    @default("Algerie")
-  is_active         Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  deletedAt         DateTime?
-  email_verified_at DateTime?
-  tokens            Token[]
-
-  // relation
-  legal_guardian_of    PlayerRelationShips[] @relation("Player")
-  players_as_guardian  PlayerRelationShips[] @relation("LegalGuardian")
-  documents            Documents[]
-  medical_certificates MedicalCertificates[]
+enum EventType {
+  Training
+  Match
+  Meeting
+  Other
 }
 
-model Token {
+enum AttendanceStatus {
+  Present
+  Absent
+  Excused
+  Late
+}
+
+enum TransactionType {
+  Income
+  Expense
+}
+
+enum FeeStatus {
+  Paid
+  Unpaid
+  Partially_Paid
+}
+
+model Users {
+  id                   Int                   @id @default(autoincrement())
+  first_name           String                @db.VarChar(100)
+  last_name            String                @db.VarChar(100)
+  email                String                @unique @db.VarChar(255)
+  password_hash        String                @db.VarChar(255)
+  role                 UserRole              @default(player)
+  date_of_birth        DateTime              @db.Date
+  place_of_birth       String                @db.VarChar(255)
+  gender               Gender
+  address              String?               @db.VarChar(255)
+  phone_number         String?               @unique @db.VarChar(20)
+  blood_type           String?               @db.VarChar(4)
+  picture_url          String?               @db.VarChar(255)
+  nationality          String?               @default("Algerian") @db.VarChar(100)
+  is_active            Boolean?              @default(true)
+  email_verified_at    DateTime?             @db.Timestamptz
+  created_at           DateTime?             @default(now()) @db.Timestamptz
+  updated_at           DateTime?             @db.Timestamptz
+  deleted_at           DateTime?             @db.Timestamptz
+  tokens               Tokens[]
+  player_relationships PlayerRelationships[] @relation("player")
+  legal_guardian       PlayerRelationships[] @relation("legal_guardian")
+  authorizations       Authorizations[]
+  team_members         TeamMembers[]
+  documents            Documents[]           @relation("user")
+  uploaded_documents   Documents[]           @relation("uploader")
+  medical_certificates MedicalCertificates[]
+  licenses             Licenses[]
+  events               Events[]
+  event_attendees      EventAttendees[]
+  player_match_stats   PlayerMatchStats[]
+  injuries             Injuries[]
+  transactions         Transactions[]
+  membership_fees      MembershipFees[]
+  announcements        Announcements[]
+  notifications        Notifications[]
+  activity_logs        ActivityLogs[]
+
+  @@map("users")
+}
+
+model Tokens {
   id         Int       @id @default(autoincrement())
-  token      String    @unique
+  token      String    @unique @db.VarChar
   type       TokenType
-  expires_at DateTime
+  expires_at DateTime  @db.Timestamptz
   user_id    Int
+  created_at DateTime? @default(now()) @db.Timestamptz
   user       Users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-
-  @@index([user_id])
+  @@map("tokens")
 }
 
-model PlayerRelationShips {
+model PlayerRelationships {
   id                Int              @id @default(autoincrement())
   legal_guardian_id Int
-  player_id         Int
+  player_id         Int              @unique
   relationship_type RelationshipType
+  legal_guardian    Users            @relation("legal_guardian", fields: [legal_guardian_id], references: [id])
+  player            Users            @relation("player", fields: [player_id], references: [id])
+  authorizations    Authorizations[]
 
-  player        Users @relation("Player", fields: [player_id], references: [id])
-  legalGuardian Users @relation("LegalGuardian", fields: [legal_guardian_id], references: [id])
+  @@map("player_relationships")
+}
 
-  @@unique([player_id])
+model Authorizations {
+  id                      Int                 @id @default(autoincrement())
+  player_id               Int                 @unique
+  relationship_id         Int
+  allow_participation     Boolean             @default(false)
+  allow_medical_emergency Boolean             @default(false)
+  allow_photo_publication Boolean             @default(false)
+  signed_at               DateTime            @db.Date
+  player                  Users               @relation(fields: [player_id], references: [id])
+  relationship            PlayerRelationships @relation(fields: [relationship_id], references: [id])
+
+  @@map("authorizations")
+}
+
+model Seasons {
+  id              Int              @id @default(autoincrement())
+  name            String           @unique @db.VarChar(100)
+  start_date      DateTime         @db.Date
+  end_date        DateTime         @db.Date
+  is_active       Boolean?         @default(false)
+  team_members    TeamMembers[]
+  licenses        Licenses[]
+  membership_fees MembershipFees[]
+
+  @@map("seasons")
+}
+
+model Teams {
+  id           Int           @id @default(autoincrement())
+  name         String        @db.VarChar(100)
+  category     String?       @db.VarChar(50)
+  logo_url     String?       @db.VarChar(255)
+  created_at   DateTime?     @default(now()) @db.Timestamptz
+  updated_at   DateTime?     @db.Timestamptz
+  team_members TeamMembers[]
+  matches      Matches[]
+
+  @@map("teams")
+}
+
+model TeamMembers {
+  id            Int     @id @default(autoincrement())
+  user_id       Int
+  team_id       Int
+  season_id     Int
+  role_in_team  String? @db.VarChar(50)
+  jersey_number Int?
+  user          Users   @relation(fields: [user_id], references: [id])
+  team          Teams   @relation(fields: [team_id], references: [id])
+  season        Seasons @relation(fields: [season_id], references: [id])
+
+  @@unique([user_id, team_id, season_id])
+  @@map("team_members")
 }
 
 model Documents {
-  id                   Int                  @id @default(autoincrement())
+  id                   Int                   @id @default(autoincrement())
   user_id              Int
-  title                String
-  file_path            String
+  title                String                @db.VarChar(255)
+  file_path            String                @db.VarChar(255)
   document_type        DocumentType
-  uploaded_by          String
-  created_At           DateTime             @default(now())
-  user                 Users                @relation(fields: [user_id], references: [id])
-  medical_certificates MedicalCertificates? @relation("MedicalDocument")
+  uploaded_by_id       Int?
+  created_at           DateTime?             @default(now()) @db.Timestamptz
+  user                 Users                 @relation("user", fields: [user_id], references: [id])
+  uploaded_by          Users?                @relation("uploader", fields: [uploaded_by_id], references: [id])
+  medical_certificates MedicalCertificates[]
+  licenses             Licenses[]
+  transactions         Transactions[]
 
-  @@index([user_id])
+  @@map("documents")
 }
 
 model MedicalCertificates {
-  id                   Int      @id @default(autoincrement())
+  id                   Int       @id @default(autoincrement())
   user_id              Int
-  issue_date           DateTime
-  document_id          Int      @unique
-  is_cardiologist_cert Boolean  @default(false)
+  issue_date           DateTime  @db.Date
+  document_id          Int       @unique
+  is_cardiologist_cert Boolean   @default(false)
+  user                 Users     @relation(fields: [user_id], references: [id])
+  document             Documents @relation(fields: [document_id], references: [id])
 
-  user            Users     @relation(fields: [user_id], references: [id])
-  MedicalDocument Documents @relation("MedicalDocument", fields: [document_id], references: [id])
+  @@map("medical_certificates")
+}
 
-  @@index([document_id])
+model Licenses {
+  id             Int        @id @default(autoincrement())
+  user_id        Int        @unique
+  season_id      Int
+  license_number String?    @unique @db.VarChar(100)
+  issue_date     DateTime?  @db.Date
+  expiry_date    DateTime?  @db.Date
+  document_id    Int?
+  user           Users      @relation(fields: [user_id], references: [id])
+  season         Seasons    @relation(fields: [season_id], references: [id])
+  document       Documents? @relation(fields: [document_id], references: [id])
+
+  @@map("licenses")
+}
+
+model Events {
+  id              Int              @id @default(autoincrement())
+  event_type      EventType
+  title           String           @db.VarChar(255)
+  description     String?          @db.Text
+  start_time      DateTime         @db.Timestamptz
+  end_time        DateTime?        @db.Timestamptz
+  location        String?          @db.VarChar(255)
+  created_by_id   Int?
+  created_at      DateTime?        @default(now()) @db.Timestamptz
+  created_by      Users?           @relation(fields: [created_by_id], references: [id])
+  matches         Matches[]
+  event_attendees EventAttendees[]
+
+  @@map("events")
+}
+
+model Matches {
+  id             Int                @id @default(autoincrement())
+  event_id       Int                @unique
+  home_team_id   Int
+  away_team_name String             @db.VarChar(100)
+  home_score     Int?
+  away_score     Int?
+  event          Events             @relation(fields: [event_id], references: [id])
+  home_team      Teams              @relation(fields: [home_team_id], references: [id])
+  player_stats   PlayerMatchStats[]
+
+  @@map("matches")
+}
+
+model EventAttendees {
+  id       Int              @id @default(autoincrement())
+  event_id Int
+  user_id  Int
+  status   AttendanceStatus @default(Present)
+  notes    String?          @db.Text
+  event    Events           @relation(fields: [event_id], references: [id])
+  user     Users            @relation(fields: [user_id], references: [id])
+
+  @@unique([event_id, user_id])
+  @@map("event_attendees")
+}
+
+model PlayerMatchStats {
+  id           Int     @id @default(autoincrement())
+  match_id     Int
+  player_id    Int
+  goals        Int?    @default(0)
+  assists      Int?    @default(0)
+  yellow_cards Int?    @default(0)
+  red_cards    Int?    @default(0)
+  match        Matches @relation(fields: [match_id], references: [id])
+  player       Users   @relation(fields: [player_id], references: [id])
+
+  @@unique([match_id, player_id])
+  @@map("player_match_stats")
+}
+
+model Injuries {
+  id                     Int       @id @default(autoincrement())
+  player_id              Int
+  description            String    @db.Text
+  injury_date            DateTime  @db.Date
+  expected_recovery_date DateTime? @db.Date
+  is_recovered           Boolean?  @default(false)
+  player                 Users     @relation(fields: [player_id], references: [id])
+
+  @@map("injuries")
+}
+
+model Transactions {
+  id               Int             @id @default(autoincrement())
+  type             TransactionType
+  amount           Decimal         @db.Decimal(10, 2)
+  description      String?         @db.Text
+  transaction_date DateTime        @db.Date
+  recorded_by_id   Int?
+  document_id      Int?
+  recorded_by      Users?          @relation(fields: [recorded_by_id], references: [id])
+  document         Documents?      @relation(fields: [document_id], references: [id])
+  fee_payments     FeePayments[]
+
+  @@map("transactions")
+}
+
+model MembershipFees {
+  id           Int           @id @default(autoincrement())
+  user_id      Int
+  season_id    Int
+  amount_due   Decimal       @db.Decimal(10, 2)
+  status       FeeStatus     @default(Unpaid)
+  due_date     DateTime?     @db.Date
+  user         Users         @relation(fields: [user_id], references: [id])
+  season       Seasons       @relation(fields: [season_id], references: [id])
+  fee_payments FeePayments[]
+
+  @@map("membership_fees")
+}
+
+model FeePayments {
+  id                Int             @id @default(autoincrement())
+  membership_fee_id Int?
+  transaction_id    Int?
+  amount_paid       Decimal?        @db.Decimal(10, 2)
+  membership_fee    MembershipFees? @relation(fields: [membership_fee_id], references: [id])
+  transaction       Transactions?   @relation(fields: [transaction_id], references: [id])
+
+  @@map("fee_payments")
+}
+
+model Announcements {
+  id         Int       @id @default(autoincrement())
+  author_id  Int?
+  title      String    @db.VarChar(255)
+  content    String    @db.Text
+  is_pinned  Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamptz
+  author     Users?    @relation(fields: [author_id], references: [id])
+
+  @@map("announcements")
+}
+
+model Notifications {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  content    String    @db.Text
+  link_url   String?   @db.VarChar(255)
+  is_read    Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamptz
+  user       Users     @relation(fields: [user_id], references: [id])
+
+  @@map("notifications")
+}
+
+model ActivityLogs {
+  id          Int       @id @default(autoincrement())
+  user_id     Int?
+  action      String    @db.VarChar(255)
+  description String?   @db.Text
+  ip_address  String?   @db.VarChar(45)
+  created_at  DateTime? @default(now()) @db.Timestamptz
+  user        Users?    @relation(fields: [user_id], references: [id])
+
+  @@map("activity_logs")
 }

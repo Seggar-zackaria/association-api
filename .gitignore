@@ -15,6 +15,7 @@ yarn-error.log*
 /public/uploads/medical
 /public/uploads/temp
 /public/uploads/pictures
+/generated/prisma
 /generated
 /.idea
 /.env

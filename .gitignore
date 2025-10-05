@@ -15,7 +15,7 @@ yarn-error.log*
 /public/uploads/medical
 /public/uploads/temp
 /public/uploads/pictures
-
+/generated
 /.idea
 /.env
 /dist

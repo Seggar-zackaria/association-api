@@ -4,19 +4,6 @@ import config from '../config/config';
 import { db } from '../prisma';
 import { UserRole } from '../../generated/prisma';
 
-
-declare global {
-    namespace Express {
-        interface Request {
-            user?: {
-                id: number;
-                email: string;
-                role: UserRole;
-            };
-        }
-    }
-}
-
 /**
  * Middleware to verify JWT and authenticate the user.
  * Attaches the user payload to the request object if the token is valid.
@@ -28,7 +15,11 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
         try {
             token = req.headers.authorization.split(' ')[1];
 
-            const decoded = jwt.verify(token, config.jwtSecret) as { userId: number, email: string, role: UserRole };
+            const decoded = jwt.verify(token, config.jwtSecret) as {
+                userId: number;
+                email: string;
+                role: UserRole;
+            };
 
             const user = await db.users.findUnique({ where: { id: decoded.userId } });
 
@@ -58,10 +49,9 @@ export const authorize = (...roles: UserRole[]) => {
     return (req: Request, res: Response, next: NextFunction) => {
         if (!req.user || !roles.includes(req.user.role)) {
             return res.status(403).json({
-                message: `Forbidden: User role '${req.user?.role}' is not authorized to access this route.`
+                message: `Forbidden: User role '${req.user?.role}' is not authorized to access this route.`,
             });
         }
         next();
     };
 };
-

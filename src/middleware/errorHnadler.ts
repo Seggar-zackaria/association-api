@@ -5,8 +5,8 @@ export interface AppError extends Error {
     message: string;
 }
 
-export const errorHandler = (err: AppError, req: Request, res: Response, next: NextFunction) => {
+export const errorHandler = (err: AppError, req: Request, res: Response, _next: NextFunction) => {
     res.status(err.status || 500).json({
         message: err.message || 'Internal error occurred',
     });
-}
+};

@@ -1,4 +1,4 @@
-import {Prisma} from "../../generated/prisma";
+import { Prisma } from '../../generated/prisma';
 
 /**
  * A TypeScript Type Guard to check for Prisma's unique constraint violation.
@@ -12,7 +12,7 @@ export function isUniqueConstraintError(
 ): error is Prisma.PrismaClientKnownRequestError {
     return (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002" &&
+        error.code === 'P2002' &&
         (error.meta?.target as string[])?.includes(field)
     );
 }
@@ -24,9 +24,6 @@ export function isUniqueConstraintError(
  */
 export function isOperationFailedError(
     error: unknown
-): error is Prisma.PrismaClientKnownRequestError & { code: "P2025" } {
-    return (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2025"
-    );
+): error is Prisma.PrismaClientKnownRequestError & { code: 'P2025' } {
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
 }

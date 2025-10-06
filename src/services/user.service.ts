@@ -1,22 +1,20 @@
-import { db } from "../prisma";
-import { CreateUserDTO, UpdateUserDTO } from "../models/user.model";
-import { isOperationFailedError, isUniqueConstraintError } from "../utils/prismaErrors";
-import { removeFileSafe } from "../utils/file";
-import { EmailInUseError, UserNotFoundError } from "../errors/errors";
-import bcrypt from "bcrypt";
-import { Prisma, Users, DocumentType, UserRole } from "../../generated/prisma";
-import { differenceInYears } from "../utils/date";
-import {guardianService} from "./guardian.service";
-import {fileService} from "./file.service";
-import {documentService} from "./document.service";
+import { db } from '../prisma';
+import { CreateUserDTO, UpdateUserDTO } from '../models/user.model';
+import { isOperationFailedError, isUniqueConstraintError } from '../utils/prismaErrors';
+import { removeFileSafe } from '../utils/file';
+import { EmailInUseError, UserNotFoundError } from '../errors/errors';
+import bcrypt from 'bcrypt';
+import { Prisma, Users, DocumentType, UserRole } from '../../generated/prisma';
+import { differenceInYears } from '../utils/date';
+import { guardianService } from './guardian.service';
+import { fileService } from './file.service';
+import { documentService } from './document.service';
 
-const userWithDocuments = Prisma.validator<Prisma.UsersDefaultArgs>()({
-    include: { documents: true },
-});
-export type UserWithDocuments = Prisma.UsersGetPayload<typeof userWithDocuments>;
+export type UserWithDocuments = Prisma.UsersGetPayload<{
+    include: { documents: true };
+}>;
 
 export const userService = {
-
     async create(
         data: CreateUserDTO,
         pictureFile?: Express.Multer.File,
@@ -29,7 +27,7 @@ export const userService = {
 
         try {
             const user = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-                const { password, ...playerData } = userData;
+                const { password: _, ...playerData } = userData;
                 const player = await tx.users.create({
                     data: {
                         ...playerData,
@@ -44,7 +42,10 @@ export const userService = {
                 }
 
                 if (pictureFile) {
-                    const { filePath, url } = await fileService.storeProfilePicture(player.id, pictureFile);
+                    const { filePath, url } = await fileService.storeProfilePicture(
+                        player.id,
+                        pictureFile
+                    );
                     permanentFilePaths.push(filePath);
                     await tx.users.update({
                         where: { id: player.id },
@@ -53,11 +54,23 @@ export const userService = {
                 }
 
                 if (medicalFile) {
-                    const path = await documentService.create(tx, player.id, medicalFile, 'Medical Certificate', DocumentType.MEDICAL_CERTIFICATE);
+                    const path = await documentService.create(
+                        tx,
+                        player.id,
+                        medicalFile,
+                        'Medical Certificate',
+                        DocumentType.MEDICAL_CERTIFICATE
+                    );
                     permanentFilePaths.push(path);
                 }
                 if (attestationFile) {
-                    const path = await documentService.create(tx, player.id, attestationFile, 'Parental Authorization', DocumentType.PARENTAL_AUTHORIZATION);
+                    const path = await documentService.create(
+                        tx,
+                        player.id,
+                        attestationFile,
+                        'Parental Authorization',
+                        DocumentType.PARENTAL_AUTHORIZATION
+                    );
                     permanentFilePaths.push(path);
                 }
 
@@ -69,18 +82,17 @@ export const userService = {
                 include: { documents: true },
             });
 
-            if (!finalUserWithDocs) throw new Error("Failed to retrieve created user.");
+            if (!finalUserWithDocs) throw new Error('Failed to retrieve created user.');
 
             return finalUserWithDocs;
-
         } catch (error: unknown) {
             //  file cleanup on any error
-            await Promise.all(permanentFilePaths.map(p => removeFileSafe(p)));
+            await Promise.all(permanentFilePaths.map((p) => removeFileSafe(p)));
             if (pictureFile) await removeFileSafe(pictureFile.path);
             if (medicalFile) await removeFileSafe(medicalFile.path);
             if (attestationFile) await removeFileSafe(attestationFile.path);
 
-            if (isUniqueConstraintError(error, "email")) {
+            if (isUniqueConstraintError(error, 'email')) {
                 throw new EmailInUseError();
             }
             throw error;
@@ -89,13 +101,13 @@ export const userService = {
 
     findAll(): Promise<Users[]> {
         return db.users.findMany({
-            where: { is_active: true }
+            where: { is_active: true },
         });
     },
 
     findAllDeactivate(): Promise<Users[]> {
         return db.users.findMany({
-            where: { is_active: false }
+            where: { is_active: false },
         });
     },
 
@@ -108,42 +120,54 @@ export const userService = {
                 last_name: true,
                 email: true,
                 role: true,
-            }
+            },
         });
     },
 
-
     async updateById(id: number, data: UpdateUserDTO): Promise<Users> {
-        const updateData: UpdateUserDTO = { ...data };
+        const cleanData: Prisma.UsersUpdateInput = {};
+
+        const allowedFields: (keyof UpdateUserDTO)[] = [
+            'first_name', 'last_name', 'date_of_birth', 'place_of_birth',
+            'gender', 'address', 'phone_number', 'blood_type', 'nationality', 'is_active'
+        ];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                //@ts-nocheck
+                (cleanData[field as keyof Prisma.UsersUpdateInput]) = data[field] as any;
+            }
+        }
 
         if (data.password) {
-            updateData.password = await bcrypt.hash(data.password, 10);
+            cleanData.password_hash = await bcrypt.hash(data.password, 10);
         }
 
         try {
             return await db.users.update({
                 where: { id },
-                data: updateData
+                data: cleanData,
             });
         } catch (error) {
             if (isOperationFailedError(error)) {
                 throw new UserNotFoundError();
             }
-            if (isUniqueConstraintError(error, "email")) {
+            if (isUniqueConstraintError(error, 'email')) {
                 throw new EmailInUseError();
             }
             throw error;
         }
     },
 
+
     async deleteById(id: number): Promise<Users> {
         try {
             return await db.users.update({
                 where: { id },
                 data: {
-                    deletedAt: new Date(),
+                    deleted_at: new Date(),
                     is_active: false,
-                }
+                },
             });
         } catch (error: unknown) {
             if (isOperationFailedError(error)) {
@@ -156,7 +180,7 @@ export const userService = {
     async updatePictureUrl(id: number, pictureFile: Express.Multer.File): Promise<Users> {
         const user = await this.findById(id);
         if (!user) {
-            await removeFileSafe(pictureFile.path); 
+            await removeFileSafe(pictureFile.path);
             throw new UserNotFoundError();
         }
 
@@ -180,5 +204,3 @@ export const userService = {
         }
     },
 };
-
-

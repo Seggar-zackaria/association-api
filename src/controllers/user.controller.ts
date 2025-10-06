@@ -1,21 +1,20 @@
-import {Request, Response} from "express";
-import {userService} from "../services/user.service";
+import { Request, Response } from 'express';
+import { userService } from '../services/user.service';
 import {
     UpdateUserSchema,
     UserResponseSchema,
-    UserArrayResponseSchema
-} from "../models/user.model";
-import {UserNotFoundError} from "../errors/errors";
+    UserArrayResponseSchema,
+} from '../models/user.model';
+import { UserNotFoundError } from '../errors/errors';
 
 export const userController = {
-
     async getUsers(req: Request, res: Response) {
         const users = await userService.findAll();
         const validationResult = UserArrayResponseSchema.safeParse(users);
 
         if (!validationResult.success) {
-            console.error("Error formatting user data:", validationResult.error);
-            return res.status(500).json({error: "Error formatting user data"});
+            console.error('Error formatting user data:', validationResult.error);
+            return res.status(500).json({ error: 'Error formatting user data' });
         }
 
         return res.json(validationResult.data);
@@ -26,8 +25,8 @@ export const userController = {
         const validationResult = UserArrayResponseSchema.safeParse(users);
 
         if (!validationResult.success) {
-            console.error("Error formatting deactivated user data:", validationResult.error);
-            return res.status(500).json({error: "Error formatting user data"});
+            console.error('Error formatting deactivated user data:', validationResult.error);
+            return res.status(500).json({ error: 'Error formatting user data' });
         }
         return res.status(200).json(validationResult.data);
     },
@@ -35,12 +34,12 @@ export const userController = {
     async getUserById(req: Request, res: Response) {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) {
-            return res.status(400).json({message: "Invalid user ID"});
+            return res.status(400).json({ message: 'Invalid user ID' });
         }
 
         const user = await userService.findById(id);
         if (!user) {
-            return res.status(404).json({message: "User not found"});
+            return res.status(404).json({ message: 'User not found' });
         }
 
         const safeUser = UserResponseSchema.parse(user);
@@ -50,7 +49,7 @@ export const userController = {
     async deleteUser(req: Request, res: Response) {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) {
-            return res.status(400).json({message: "Invalid user ID"});
+            return res.status(400).json({ message: 'Invalid user ID' });
         }
 
         try {
@@ -58,31 +57,31 @@ export const userController = {
             return res.status(200).json({
                 success: true,
                 message: 'User deactivated successfully',
-                user: UserResponseSchema.parse(user) // Optionally return the deactivated user's data
+                user: UserResponseSchema.parse(user), // Optionally return the deactivated user's data
             });
         } catch (error: unknown) {
             if (error instanceof UserNotFoundError) {
-                return res.status(error.statusCode).json({error: error.message});
+                return res.status(error.statusCode).json({ error: error.message });
             }
 
-            console.error("Error deleting user:", error);
-            return res.status(500).json({error: "Internal server error"});
+            console.error('Error deleting user:', error);
+            return res.status(500).json({ error: 'Internal server error' });
         }
     },
 
     async updateUser(req: Request, res: Response) {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) {
-            return res.status(400).json({message: "Invalid user ID"});
+            return res.status(400).json({ message: 'Invalid user ID' });
         }
 
         if (Object.keys(req.body).length === 0) {
-            return res.status(400).json({message: "Request body is required"});
+            return res.status(400).json({ message: 'Request body is required' });
         }
 
         const validationResult = UpdateUserSchema.safeParse(req.body);
         if (!validationResult.success) {
-            return res.status(400).json({errors: validationResult.error.format()});
+            return res.status(400).json({ errors: validationResult.error.format() });
         }
 
         try {
@@ -91,21 +90,21 @@ export const userController = {
             return res.status(200).json(responseData);
         } catch (error) {
             if (error instanceof UserNotFoundError) {
-                return res.status(error.statusCode).json({error: error.message});
+                return res.status(error.statusCode).json({ error: error.message });
             }
-            console.error("Error updating user:", error);
-            return res.status(500).json({error: "Internal server error"});
+            console.error('Error updating user:', error);
+            return res.status(500).json({ error: 'Internal server error' });
         }
     },
 
     async uploadProfilePicture(req: Request, res: Response) {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) {
-            return res.status(400).json({message: 'Invalid user ID'});
+            return res.status(400).json({ message: 'Invalid user ID' });
         }
 
         if (!req.file) {
-            return res.status(400).json({error: 'No file was uploaded.'});
+            return res.status(400).json({ error: 'No file was uploaded.' });
         }
 
         try {
@@ -117,11 +116,11 @@ export const userController = {
             });
         } catch (error) {
             if (error instanceof UserNotFoundError) {
-                return res.status(error.statusCode).json({error: error.message});
+                return res.status(error.statusCode).json({ error: error.message });
             }
 
-            console.error("Error uploading profile picture:", error);
-            return res.status(500).json({error: 'An internal server error occurred.'});
+            console.error('Error uploading profile picture:', error);
+            return res.status(500).json({ error: 'An internal server error occurred.' });
         }
     },
 };

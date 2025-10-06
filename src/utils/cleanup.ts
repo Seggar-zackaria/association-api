@@ -1,4 +1,4 @@
-import { removeFileSafe } from "./file";
+import { removeFileSafe } from './file';
 
 export async function cleanupUploadedFiles(
     file?: Express.Multer.File,
@@ -7,7 +7,7 @@ export async function cleanupUploadedFiles(
     try {
         if (file) {
             await removeFileSafe(file.path);
-        } else if (files && typeof files === "object" && !Array.isArray(files)) {
+        } else if (files && typeof files === 'object' && !Array.isArray(files)) {
             for (const arr of Object.values(files)) {
                 if (Array.isArray(arr)) {
                     for (const f of arr) {
@@ -17,6 +17,6 @@ export async function cleanupUploadedFiles(
             }
         }
     } catch (err) {
-        console.error("Error during file cleanup:", err);
+        console.error('Error during file cleanup:', err);
     }
 }

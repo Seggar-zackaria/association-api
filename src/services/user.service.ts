@@ -1,16 +1,19 @@
 import { db } from "../prisma";
-import { CreateUserDTO, UpdateUserDTO, CreateGuardianDTO } from "../models/user.model";
+import { CreateUserDTO, UpdateUserDTO } from "../models/user.model";
 import { isOperationFailedError, isUniqueConstraintError } from "../utils/prismaErrors";
 import { removeFileSafe, generateUserPictureName, renameFileName } from "../utils/file";
 import { EmailInUseError, UserNotFoundError } from "../errors/errors";
 import bcrypt from "bcrypt";
 import path from "path";
-import {DocumentType, Users, Documents, gender, $Enums} from "../../generated/prisma";
-import type { Prisma } from "../../generated/prisma";
+import { Prisma, Users, DocumentType, Gender, RelationshipType, UserRole } from "../../generated/prisma";
 import config from "../config/config";
 import { differenceInYears } from "../utils/date";
 import { PICTURES_DIR, MEDICAL_DOCS_DIR, ATTESTATION_DOCS_DIR } from "../constants";
-import userRole = $Enums.userRole;
+
+const userWithDocuments = Prisma.validator<Prisma.UsersDefaultArgs>()({
+    include: { documents: true },
+});
+export type UserWithDocuments = Prisma.UsersGetPayload<typeof userWithDocuments>;
 
 export const userService = {
 
@@ -19,50 +22,49 @@ export const userService = {
         pictureFile?: Express.Multer.File,
         medicalFile?: Express.Multer.File,
         attestationFile?: Express.Multer.File
-    ): Promise<Users> {
+    ): Promise<UserWithDocuments> {
         const hashPassword = await bcrypt.hash(data.password, 10);
         const { legal_guardian, ...userData } = data;
         const permanentFilePaths: string[] = [];
 
         try {
             const user = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+                // Create the player
+                const { password, ...playerData } = userData;
                 let player = await tx.users.create({
                     data: {
-                        ...userData,
-                        password: hashPassword,
-                        role: userRole.user  // player
+                        ...playerData,
+                        password_hash: hashPassword, // Changed from password to password_hash
+                        role: UserRole.player,
                     },
                 });
 
                 const age = differenceInYears(new Date(), player.date_of_birth);
 
                 if (age < 18 && legal_guardian) {
-                    const guardianUser  = await tx.users.upsert({
+                    const {password: guardianPassword, ...guardianData} = legal_guardian;
+                    const guardianUser = await tx.users.upsert({
                         where: { email: legal_guardian.email },
                         update: {},
                         create: {
-                            first_name: legal_guardian.first_name,
-                            last_name: legal_guardian.last_name,
-                            email: legal_guardian.email,
-                            phone_number: legal_guardian.phone_number,
-                            password: await bcrypt.hash(legal_guardian.password, 10),
-                            role: userRole.parent,
+                            ...guardianData,
+                            password_hash: await bcrypt.hash(guardianPassword, 10),
+                            role: UserRole.parent,
                             address: player.address,
-                            date_of_birth: 'null',
-                            place_of_birth: 'null',
-                            gender: "woman",
+                            gender: legal_guardian.gender as Gender,
                         }
                     });
 
-                    await tx.playerRelationShips.create({
+                    await tx.playerRelationships.create({
                         data: {
                             player_id: player.id,
                             legal_guardian_id: guardianUser.id,
-                            relationship_type: legal_guardian.relation,
+                            relationship_type: legal_guardian.relation as RelationshipType,
                         }
                     });
                 }
 
+                // Handle picture upload
                 if (pictureFile) {
                     const newFileName = generateUserPictureName(player.id, pictureFile.originalname);
                     const newFilePath = path.join(PICTURES_DIR, newFileName);
@@ -76,6 +78,7 @@ export const userService = {
                     });
                 }
 
+                // Handle document uploads
                 const documentsToCreate: Prisma.DocumentsCreateManyInput[] = [];
                 const processDocument = async (file: Express.Multer.File, title: string, type: DocumentType) => {
                     let destinationDir: string;
@@ -88,6 +91,7 @@ export const userService = {
                         destinationDir = ATTESTATION_DOCS_DIR;
                         baseUrlPath = 'attestation';
                     } else {
+                        // You can add more document types here
                         throw new Error(`Unsupported document type: ${type}`);
                     }
 
@@ -101,7 +105,7 @@ export const userService = {
                         title: title,
                         file_path: `${config.baseUrl}/uploads/${baseUrlPath}/${newDocName}`,
                         document_type: type,
-                        uploaded_by:`${player.first_name} ${player.last_name}`,
+                        uploaded_by_id: player.id,
                     });
                 };
 
@@ -135,22 +139,10 @@ export const userService = {
                 throw new Error("Failed to retrieve created user after transaction.");
             }
 
-            const medicalCert = finalUserWithDocs.documents.find(
-                (doc: Documents) => doc.document_type === DocumentType.MEDICAL_CERTIFICATE
-            );
-            const attestation = finalUserWithDocs.documents.find(
-                (doc: Documents) => doc.document_type === DocumentType.PARENTAL_AUTHORIZATION
-            );
-
-            const userForResponse = {
-                ...finalUserWithDocs,
-                medical_certificate_url: medicalCert?.file_path || null,
-                attestation_url: attestation?.file_path || null,
-            };
-
-            return userForResponse as Users;
+            return finalUserWithDocs;
 
         } catch (error: unknown) {
+            // Clean up uploaded files if an error occurs
             for (const filePath of permanentFilePaths) {
                 await removeFileSafe(filePath);
             }
@@ -182,7 +174,7 @@ export const userService = {
     },
 
     async updateById(id: number, data: UpdateUserDTO): Promise<Users> {
-        const updateData: Prisma.UsersUpdateInput = { ...data };
+        const updateData: UpdateUserDTO = { ...data };
 
         if (data.password) {
             updateData.password = await bcrypt.hash(data.password, 10);

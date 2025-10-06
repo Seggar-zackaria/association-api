@@ -14,6 +14,7 @@ export const userController = {
         const validationResult = UserArrayResponseSchema.safeParse(users);
 
         if (!validationResult.success) {
+            console.error("Error formatting user data:", validationResult.error);
             return res.status(500).json({error: "Error formatting user data"});
         }
 
@@ -21,10 +22,11 @@ export const userController = {
     },
 
     async getDeactivateUser(req: Request, res: Response) {
-        const user = await userService.findAllDeactivate();
-        const validationResult = UserArrayResponseSchema.safeParse(user);
+        const users = await userService.findAllDeactivate(); // Note: You might want to rename this method in the service for clarity, e.g., `findAllDeactivated`
+        const validationResult = UserArrayResponseSchema.safeParse(users);
 
         if (!validationResult.success) {
+            console.error("Error formatting deactivated user data:", validationResult.error);
             return res.status(500).json({error: "Error formatting user data"});
         }
         return res.status(200).json(validationResult.data);
@@ -41,6 +43,7 @@ export const userController = {
             return res.status(404).json({message: "User not found"});
         }
 
+        // Assuming UserResponseSchema is updated to handle the new user structure
         const safeUser = UserResponseSchema.parse(user);
         return res.json(safeUser);
     },
@@ -53,22 +56,19 @@ export const userController = {
 
         try {
             const user = await userService.deleteById(id);
-            if (user) {
-
-                return res.status(204).json({
-                    success: true,
-                    message: 'User deactivated successfully',
-                });
-
-            }
-            return res.status(204).json({data: UserResponseSchema.parse(user)});
+            // The `deleteById` method now deactivates the user, so a 200 OK with a success message is more appropriate than a 204 No Content.
+            return res.status(200).json({
+                success: true,
+                message: 'User deactivated successfully',
+                user: UserResponseSchema.parse(user) // Optionally return the deactivated user's data
+            });
         } catch (error: unknown) {
             if (error instanceof UserNotFoundError) {
                 return res.status(error.statusCode).json({error: error.message});
             }
 
-            console.log(error);
-            return res.status(500).json({error: "internal server error"});
+            console.error("Error deleting user:", error);
+            return res.status(500).json({error: "Internal server error"});
         }
     },
 
@@ -79,7 +79,7 @@ export const userController = {
         }
 
         if (Object.keys(req.body).length === 0) {
-            return res.status(400).json({message: "Body is required"});
+            return res.status(400).json({message: "Request body is required"});
         }
 
         const validationResult = UpdateUserSchema.safeParse(req.body);
@@ -89,19 +89,15 @@ export const userController = {
 
         try {
             const updatedUser = await userService.updateById(id, validationResult.data);
-
             const responseData = UserResponseSchema.parse(updatedUser);
             return res.status(200).json(responseData);
-
         } catch (error) {
             if (error instanceof UserNotFoundError) {
                 return res.status(error.statusCode).json({error: error.message});
             }
-            console.error(error);
-            return res.status(500).json({error: "internal server error"});
+            console.error("Error updating user:", error);
+            return res.status(500).json({error: "Internal server error"});
         }
-
-
     },
 
     async uploadProfilePicture(req: Request, res: Response) {
@@ -115,22 +111,19 @@ export const userController = {
         }
 
         try {
-
-            await userService.updatePictureUrl(id, req.file);
-
+            const updatedUser = await userService.updatePictureUrl(id, req.file);
             return res.status(200).json({
                 success: true,
                 message: 'Profile picture uploaded successfully.',
-                pictureUrl: req.file,
+                pictureUrl: updatedUser.picture_url, // Return the new picture URL from the updated user object
             });
         } catch (error) {
             if (error instanceof UserNotFoundError) {
                 return res.status(error.statusCode).json({error: error.message});
             }
 
-            console.error(error);
+            console.error("Error uploading profile picture:", error);
             return res.status(500).json({error: 'An internal server error occurred.'});
         }
-
     },
-}
+};

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export const UPLOAD_DIR = path.join('public', 'uploads', "temp");
+export const UPLOAD_DIR = path.join('public', 'uploads');
 export const PICTURES_DIR = path.join(UPLOAD_DIR, 'pictures');
 export const MEDICAL_DOCS_DIR = path.join(UPLOAD_DIR, 'medical');
 export const ATTESTATION_DOCS_DIR = path.join(UPLOAD_DIR, 'attestation');

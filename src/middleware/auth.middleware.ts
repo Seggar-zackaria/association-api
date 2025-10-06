@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config/config';
 import { db } from '../prisma';
-import { userRole } from '../../generated/prisma';
+import { UserRole } from '../../generated/prisma';
 
 
 declare global {
@@ -11,7 +11,7 @@ declare global {
             user?: {
                 id: number;
                 email: string;
-                role: userRole;
+                role: UserRole;
             };
         }
     }
@@ -28,7 +28,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
         try {
             token = req.headers.authorization.split(' ')[1];
 
-            const decoded = jwt.verify(token, config.jwtSecret) as { userId: number, email: string, role: userRole };
+            const decoded = jwt.verify(token, config.jwtSecret) as { userId: number, email: string, role: UserRole };
 
             const user = await db.users.findUnique({ where: { id: decoded.userId } });
 
@@ -51,10 +51,10 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
 
 /**
  * Middleware factory to authorize users based on their roles.
- * @param {...userRole[]} roles - An array of roles that are allowed to access the route.
+ * @param {...UserRole[]} roles - An array of roles that are allowed to access the route.
  * @returns An Express middleware function.
  */
-export const authorize = (...roles: userRole[]) => {
+export const authorize = (...roles: UserRole[]) => {
     return (req: Request, res: Response, next: NextFunction) => {
         if (!req.user || !roles.includes(req.user.role)) {
             return res.status(403).json({

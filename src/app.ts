@@ -10,12 +10,12 @@ const app: Express = express();
 
 app.use(express.json());
 
+app.use(express.urlencoded({ extended: true }));
+
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-
-    max: 10,
-
+    limit: 10,
     standardHeaders: true,
     legacyHeaders: false,
 
@@ -25,10 +25,7 @@ const authLimiter = rateLimit({
 
 
 app.use('/api/auth', authLimiter);
-
-
 app.use(express.static('public'));
-
 app.use('/api/user', userRoutes);
 app.use('/api/auth', authRoutes);
 

@@ -1,5 +1,5 @@
 {
-  "name": "EHBAT",
+  "name": "ehbat",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
@@ -19,6 +19,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.6",
+    "sharp": "^0.34.4",
     "zod": "^4.1.11"
   },
   "devDependencies": {

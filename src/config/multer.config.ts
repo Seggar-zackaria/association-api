@@ -23,7 +23,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
     if (isValid) {
         cb(null, true);
     } else {
-        cb(new Error('Invalid file type. Only images (JPEG, PNG, GIF) and documents (PDF, DOC, DOCX) are allowed.'));
+        cb(new Error('Invalid file type. Only images (JPEG, PNG, GIF) and documents (PDF) are allowed.'));
     }
 };
 

@@ -1,14 +1,14 @@
 import { db } from "../prisma";
 import { CreateUserDTO, UpdateUserDTO } from "../models/user.model";
 import { isOperationFailedError, isUniqueConstraintError } from "../utils/prismaErrors";
-import { removeFileSafe, generateUserPictureName, renameFileName } from "../utils/file";
+import { removeFileSafe } from "../utils/file";
 import { EmailInUseError, UserNotFoundError } from "../errors/errors";
 import bcrypt from "bcrypt";
-import path from "path";
-import { Prisma, Users, DocumentType, Gender, RelationshipType, UserRole } from "../../generated/prisma";
-import config from "../config/config";
+import { Prisma, Users, DocumentType, UserRole } from "../../generated/prisma";
 import { differenceInYears } from "../utils/date";
-import { PICTURES_DIR, MEDICAL_DOCS_DIR, ATTESTATION_DOCS_DIR } from "../constants";
+import {guardianService} from "./guardian.service";
+import {fileService} from "./file.service";
+import {documentService} from "./document.service";
 
 const userWithDocuments = Prisma.validator<Prisma.UsersDefaultArgs>()({
     include: { documents: true },
@@ -23,129 +23,59 @@ export const userService = {
         medicalFile?: Express.Multer.File,
         attestationFile?: Express.Multer.File
     ): Promise<UserWithDocuments> {
-        const hashPassword = await bcrypt.hash(data.password, 10);
         const { legal_guardian, ...userData } = data;
+        const hashPassword = await bcrypt.hash(userData.password, 10);
         const permanentFilePaths: string[] = [];
 
         try {
             const user = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-                // Create the player
                 const { password, ...playerData } = userData;
-                let player = await tx.users.create({
+                const player = await tx.users.create({
                     data: {
                         ...playerData,
-                        password_hash: hashPassword, // Changed from password to password_hash
+                        password_hash: hashPassword,
                         role: UserRole.player,
                     },
                 });
 
                 const age = differenceInYears(new Date(), player.date_of_birth);
-
                 if (age < 18 && legal_guardian) {
-                    const {password: guardianPassword, ...guardianData} = legal_guardian;
-                    const guardianUser = await tx.users.upsert({
-                        where: { email: legal_guardian.email },
-                        update: {},
-                        create: {
-                            ...guardianData,
-                            password_hash: await bcrypt.hash(guardianPassword, 10),
-                            role: UserRole.parent,
-                            address: player.address,
-                            gender: legal_guardian.gender as Gender,
-                        }
-                    });
-
-                    await tx.playerRelationships.create({
-                        data: {
-                            player_id: player.id,
-                            legal_guardian_id: guardianUser.id,
-                            relationship_type: legal_guardian.relation as RelationshipType,
-                        }
-                    });
+                    await guardianService.processGuardian(tx, legal_guardian, player);
                 }
 
-                // Handle picture upload
                 if (pictureFile) {
-                    const newFileName = generateUserPictureName(player.id, pictureFile.originalname);
-                    const newFilePath = path.join(PICTURES_DIR, newFileName);
-                    await renameFileName(pictureFile.path, newFilePath);
-                    permanentFilePaths.push(newFilePath);
-
-                    const pictureUrl = `${config.baseUrl}/uploads/pictures/${newFileName}`;
-                    player = await tx.users.update({
+                    const { filePath, url } = await fileService.storeProfilePicture(player.id, pictureFile);
+                    permanentFilePaths.push(filePath);
+                    await tx.users.update({
                         where: { id: player.id },
-                        data: { picture_url: pictureUrl },
+                        data: { picture_url: url },
                     });
                 }
-
-                // Handle document uploads
-                const documentsToCreate: Prisma.DocumentsCreateManyInput[] = [];
-                const processDocument = async (file: Express.Multer.File, title: string, type: DocumentType) => {
-                    let destinationDir: string;
-                    let baseUrlPath: string;
-
-                    if (type === DocumentType.MEDICAL_CERTIFICATE) {
-                        destinationDir = MEDICAL_DOCS_DIR;
-                        baseUrlPath = 'medical';
-                    } else if (type === DocumentType.PARENTAL_AUTHORIZATION) {
-                        destinationDir = ATTESTATION_DOCS_DIR;
-                        baseUrlPath = 'attestation';
-                    } else {
-                        // You can add more document types here
-                        throw new Error(`Unsupported document type: ${type}`);
-                    }
-
-                    const newDocName = `${player.id}-${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
-                    const newDocPath = path.join(destinationDir, newDocName);
-                    await renameFileName(file.path, newDocPath);
-                    permanentFilePaths.push(newDocPath);
-
-                    documentsToCreate.push({
-                        user_id: player.id,
-                        title: title,
-                        file_path: `${config.baseUrl}/uploads/${baseUrlPath}/${newDocName}`,
-                        document_type: type,
-                        uploaded_by_id: player.id,
-                    });
-                };
 
                 if (medicalFile) {
-                    await processDocument(medicalFile, 'Medical Certificate', DocumentType.MEDICAL_CERTIFICATE);
+                    const path = await documentService.create(tx, player.id, medicalFile, 'Medical Certificate', DocumentType.MEDICAL_CERTIFICATE);
+                    permanentFilePaths.push(path);
                 }
-
                 if (attestationFile) {
-                    await processDocument(attestationFile, 'Parental Authorization', DocumentType.PARENTAL_AUTHORIZATION);
-                }
-
-                if (documentsToCreate.length > 0) {
-                    await tx.documents.createMany({
-                        data: documentsToCreate
-                    });
+                    const path = await documentService.create(tx, player.id, attestationFile, 'Parental Authorization', DocumentType.PARENTAL_AUTHORIZATION);
+                    permanentFilePaths.push(path);
                 }
 
                 return player;
-            }, {
-                timeout: 10000,
             });
 
             const finalUserWithDocs = await db.users.findUnique({
                 where: { id: user.id },
-                include: {
-                    documents: true,
-                },
+                include: { documents: true },
             });
 
-            if (!finalUserWithDocs) {
-                throw new Error("Failed to retrieve created user after transaction.");
-            }
+            if (!finalUserWithDocs) throw new Error("Failed to retrieve created user.");
 
             return finalUserWithDocs;
 
         } catch (error: unknown) {
-            // Clean up uploaded files if an error occurs
-            for (const filePath of permanentFilePaths) {
-                await removeFileSafe(filePath);
-            }
+            //  file cleanup on any error
+            await Promise.all(permanentFilePaths.map(p => removeFileSafe(p)));
             if (pictureFile) await removeFileSafe(pictureFile.path);
             if (medicalFile) await removeFileSafe(medicalFile.path);
             if (attestationFile) await removeFileSafe(attestationFile.path);
@@ -169,9 +99,19 @@ export const userService = {
         });
     },
 
-    findById(id: number): Promise<Users | null> {
-        return db.users.findFirst({ where: { id, is_active: true } });
+    async findById(id: number): Promise<Partial<Users> | null> {
+        return db.users.findFirst({
+            where: { id, is_active: true },
+            select: {
+                id: true,
+                first_name: true,
+                last_name: true,
+                email: true,
+                role: true,
+            }
+        });
     },
+
 
     async updateById(id: number, data: UpdateUserDTO): Promise<Users> {
         const updateData: UpdateUserDTO = { ...data };
@@ -216,33 +156,23 @@ export const userService = {
     async updatePictureUrl(id: number, pictureFile: Express.Multer.File): Promise<Users> {
         const user = await this.findById(id);
         if (!user) {
-            await removeFileSafe(pictureFile.path);
+            await removeFileSafe(pictureFile.path); 
             throw new UserNotFoundError();
         }
 
-        if (user.picture_url) {
-            try {
-                const oldFileName = path.basename(new URL(user.picture_url).pathname);
-                const oldFilePath = path.join(PICTURES_DIR, oldFileName);
-                await removeFileSafe(oldFilePath);
-            } catch (err) {
-                console.error(`Failed to delete old picture file for user ${id}: ${user.picture_url}`, err);
-            }
-        }
-
-        const newFileName = generateUserPictureName(id, pictureFile.originalname);
-        const newFilePath = path.join(PICTURES_DIR, newFileName);
-
         try {
-            await renameFileName(pictureFile.path, newFilePath);
-            const newPictureUrl = `${config.baseUrl}/uploads/pictures/${newFileName}`;
+            const { url: newPictureUrl } = await fileService.updateProfilePicture(
+                id,
+                pictureFile,
+                user.picture_url ?? null
+            );
 
             return await db.users.update({
                 where: { id },
                 data: { picture_url: newPictureUrl },
             });
         } catch (error) {
-            await removeFileSafe(newFilePath);
+            await removeFileSafe(pictureFile.path);
             if (isOperationFailedError(error)) {
                 throw new UserNotFoundError();
             }

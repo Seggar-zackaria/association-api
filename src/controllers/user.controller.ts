@@ -43,7 +43,6 @@ export const userController = {
             return res.status(404).json({message: "User not found"});
         }
 
-        // Assuming UserResponseSchema is updated to handle the new user structure
         const safeUser = UserResponseSchema.parse(user);
         return res.json(safeUser);
     },
@@ -56,7 +55,6 @@ export const userController = {
 
         try {
             const user = await userService.deleteById(id);
-            // The `deleteById` method now deactivates the user, so a 200 OK with a success message is more appropriate than a 204 No Content.
             return res.status(200).json({
                 success: true,
                 message: 'User deactivated successfully',

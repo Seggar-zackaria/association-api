@@ -100,7 +100,6 @@ model Users {
   team_members         TeamMembers[]
   documents            Documents[]           @relation("user")
   uploaded_documents   Documents[]           @relation("uploader")
-  medical_certificates MedicalCertificates[]
   licenses             Licenses[]
   events               Events[]
   event_attendees      EventAttendees[]
@@ -195,45 +194,29 @@ model TeamMembers {
 }
 
 model Documents {
-  id                   Int                   @id @default(autoincrement())
-  user_id              Int
-  title                String                @db.VarChar(255)
-  file_path            String                @db.VarChar(255)
-  document_type        DocumentType
-  uploaded_by_id       Int?
-  created_at           DateTime?             @default(now()) @db.Timestamptz
-  user                 Users                 @relation("user", fields: [user_id], references: [id])
-  uploaded_by          Users?                @relation("uploader", fields: [uploaded_by_id], references: [id])
-  medical_certificates MedicalCertificates[]
-  licenses             Licenses[]
-  transactions         Transactions[]
+  id             Int            @id @default(autoincrement())
+  user_id        Int
+  title          String         @db.VarChar(255)
+  file_path      String         @db.VarChar(255)
+  document_type  DocumentType
+  uploaded_by_id Int?
+  created_at     DateTime?      @default(now()) @db.Timestamptz
+  user           Users          @relation("user", fields: [user_id], references: [id])
+  uploaded_by    Users?         @relation("uploader", fields: [uploaded_by_id], references: [id])
+  transactions   Transactions[]
 
   @@map("documents")
 }
 
-model MedicalCertificates {
-  id                   Int       @id @default(autoincrement())
-  user_id              Int
-  issue_date           DateTime  @db.Date
-  document_id          Int       @unique
-  is_cardiologist_cert Boolean   @default(false)
-  user                 Users     @relation(fields: [user_id], references: [id])
-  document             Documents @relation(fields: [document_id], references: [id])
-
-  @@map("medical_certificates")
-}
-
 model Licenses {
-  id             Int        @id @default(autoincrement())
-  user_id        Int        @unique
+  id             Int       @id @default(autoincrement())
+  user_id        Int       @unique
   season_id      Int
-  license_number String?    @unique @db.VarChar(100)
-  issue_date     DateTime?  @db.Date
-  expiry_date    DateTime?  @db.Date
-  document_id    Int?
-  user           Users      @relation(fields: [user_id], references: [id])
-  season         Seasons    @relation(fields: [season_id], references: [id])
-  document       Documents? @relation(fields: [document_id], references: [id])
+  license_number String?   @unique @db.VarChar(100)
+  issue_date     DateTime? @db.Date
+  expiry_date    DateTime? @db.Date
+  user           Users     @relation(fields: [user_id], references: [id])
+  season         Seasons   @relation(fields: [season_id], references: [id])
 
   @@map("licenses")
 }
